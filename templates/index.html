@@ -25,10 +25,27 @@
 
     #captureBtn {
         animation: pulse 2s infinite;
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        background: linear-gradient(45deg, #ff416c, #ff4b2b);
+        border: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 2rem;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    #captureBtn:hover {
+        transform: scale(1.05);
+        box-shadow: 0 4px 25px rgba(0,0,0,0.5);
     }
 
     #captureBtn:disabled {
         animation: none;
+        opacity: 0.6;
     }
 
     @keyframes pulse {
@@ -45,6 +62,16 @@
     #processingOverlay {
         background-color: rgba(0,0,0,0.85);
     }
+
+    #animationEmoji {
+        font-size: 150px;
+        display: none;
+    }
+
+    @keyframes emoji-bounce {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.2); }
+    }
     </style>
     <!-- Conteneur vidéo avec marges élégantes -->
     <div class="video-container position-relative d-flex align-items-center justify-content-center" id="videoContainer" style="height: calc(100vh - 2rem); width: calc(100vw - 2rem);">
@@ -57,16 +84,24 @@
         <div class="countdown d-none position-absolute top-50 start-50 translate-middle" id="countdown"></div>
         
         <!-- Flash blanc pour la prise de photo -->
-        <div class="flash-overlay d-none position-fixed top-0 start-0 w-100 h-100" id="flashOverlay" 
-             style="background-color: white; z-index: 15; display: flex; align-items: center; justify-content: center;">
-            <div style="font-size: 8rem; font-weight: bold; color: black; text-shadow: none;">CHEESE!</div>
+        <div class="flash-overlay d-none position-fixed top-0 start-0 w-100 h-100" id="flashOverlay"
+             style="background-color: white; z-index: 15;"></div>
+
+        <!-- Punchline overlay -->
+        <div id="punchlineOverlay" class="d-none position-fixed w-100 text-center" style="z-index: 30; pointer-events: none;">
+            <div id="punchlineText" style="display:inline-block; margin:auto; font-size:2rem; font-weight:bold; color:white; text-shadow:0 0 10px black;"></div>
         </div>
-        
+
+        <!-- Animation overlay -->
+        <div id="animationOverlay" class="d-none position-fixed" style="z-index:40; pointer-events:none;">
+            <img id="animationImage" src="" alt="Animation" style="width:150px;height:auto; display:none;" />
+            <div id="animationEmoji"></div>
+        </div>
+
         <!-- Bouton capture en overlay -->
         <div class="position-absolute bottom-0 start-50 translate-middle-x mb-4" style="z-index: 5;">
-            <button id="captureBtn" class="btn btn-danger btn-lg px-5 py-3" onclick="capturePhoto()" 
-                    style="font-size: 1.5rem; border-radius: 50px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
-                <i class="fas fa-camera fa-2x"></i>
+            <button id="captureBtn" class="btn" onclick="capturePhoto()">
+                <i class="fas fa-camera"></i>
             </button>
         </div>
     </div>
@@ -117,6 +152,7 @@
 
 {% block scripts %}
 <script>
+const boothConfig = {{ booth_config | tojson | safe }};
 let isCapturing = false;
 
 // Initialiser la caméra au chargement de la page
@@ -183,25 +219,117 @@ function capturePhoto() {
     const countdownInterval = setInterval(() => {
         countdown.textContent = timeLeft;
         timeLeft--;
-        
+
         if (timeLeft < 0) {
             clearInterval(countdownInterval);
-            countdown.textContent = 'CHEESE!';
-            
-            // Déclencher le flash blanc
+            countdown.classList.add('d-none');
+
+            const phrase = getRandomPhrase();
+
+            // Déclencher le flash blanc rapidement
+            const flashOverlay = document.getElementById('flashOverlay');
+            flashOverlay.classList.remove('d-none');
             setTimeout(() => {
-                countdown.classList.add('d-none');
-                const flashOverlay = document.getElementById('flashOverlay');
-                flashOverlay.classList.remove('d-none');
-                
-                // Masquer le flash après un court délai et prendre la photo
-                setTimeout(() => {
-                    flashOverlay.classList.add('d-none');
-                    takePicture();
-                }, 300);
-            }, 200);
+                flashOverlay.classList.add('d-none');
+            }, 100);
+
+            // Prendre la photo immédiatement
+            takePicture();
+
+            // Afficher la punchline
+            showPunchline(phrase);
         }
     }, 1000);
+}
+
+function getRandomPhrase() {
+    const phrases = boothConfig.phrases || [];
+    if (!phrases.length) return 'Souris !';
+    const index = Math.floor(Math.random() * phrases.length);
+    return phrases[index];
+}
+
+function showPunchline(text) {
+    const overlay = document.getElementById('punchlineOverlay');
+    const textDiv = document.getElementById('punchlineText');
+
+    // Positioning
+    overlay.style.left = '50%';
+    overlay.style.transform = 'translateX(-50%)';
+    if (boothConfig.display && boothConfig.display.position === 'bottom') {
+        overlay.style.top = '';
+        overlay.style.bottom = '10%';
+    } else {
+        overlay.style.bottom = '';
+        overlay.style.top = '50%';
+        overlay.style.transform = 'translate(-50%, -50%)';
+    }
+
+    textDiv.textContent = text;
+    overlay.classList.remove('d-none');
+
+    // Optional sound
+    if (boothConfig.sound && boothConfig.sound.enabled) {
+        try {
+            const audio = new Audio(boothConfig.sound.asset || 'static/assets/punch.mp3');
+            audio.volume = Math.min(0.5, audio.volume);
+            audio.play().catch(() => {});
+        } catch (e) {
+            console.log('Sound error', e);
+        }
+    }
+
+    setTimeout(() => {
+        overlay.classList.add('d-none');
+        maybeShowAnimation();
+    }, (boothConfig.display && boothConfig.display.durationMs) || 1500);
+}
+
+function maybeShowAnimation() {
+    const anim = boothConfig.animation || {};
+    if (!anim.enabled) return;
+    if (Math.random() >= (anim.probability || 0)) return;
+
+    const assets = anim.assets || [];
+    if (!assets.length) return;
+    const asset = assets[Math.floor(Math.random() * assets.length)];
+
+    const overlay = document.getElementById('animationOverlay');
+    const img = document.getElementById('animationImage');
+    const emojiDiv = document.getElementById('animationEmoji');
+    img.style.display = 'none';
+    emojiDiv.style.display = 'none';
+
+    if (asset.startsWith('emoji:')) {
+        emojiDiv.textContent = asset.slice(6);
+        emojiDiv.style.animation = `emoji-bounce ${(anim.durationMs || 800)}ms ease`;
+        overlay.style.top = '50%';
+        overlay.style.left = '50%';
+        overlay.style.transform = 'translate(-50%, -50%)';
+        overlay.classList.remove('d-none');
+        emojiDiv.style.display = 'block';
+        setTimeout(() => {
+            overlay.classList.add('d-none');
+            emojiDiv.style.display = 'none';
+        }, anim.durationMs || 800);
+        return;
+    }
+
+    img.onload = () => {
+        overlay.style.top = '50%';
+        overlay.style.left = '50%';
+        overlay.style.transform = 'translate(-50%, -50%)';
+        overlay.classList.remove('d-none');
+        img.style.display = 'block';
+        setTimeout(() => {
+            overlay.classList.add('d-none');
+            img.style.display = 'none';
+        }, anim.durationMs || 800);
+    };
+    img.onerror = () => {
+        console.log('Animation asset missing:', asset);
+    };
+    img.src = asset;
 }
 
 async function takePicture() {
